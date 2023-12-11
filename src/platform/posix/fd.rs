@@ -24,7 +24,7 @@ pub struct Fd(pub RawFd);
 impl Fd {
     pub fn new(value: RawFd) -> Result<Self> {
         if value < 0 {
-            return Err(Error::InvalidDescriptor);
+            return Err(Error::InvalidDescriptor).map_err(anyhow::Error::from);
         }
 
         Ok(Fd(value))

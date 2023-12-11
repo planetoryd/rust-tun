@@ -54,4 +54,4 @@ pub enum Error {
     WintunError(#[from] wintun::Error),
 }
 
-pub type Result<T, E = Error> = ::std::result::Result<T, E>;
+pub type Result<T, E = anyhow::Error> = anyhow::Result<T, E>;

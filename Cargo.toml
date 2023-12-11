@@ -11,6 +11,7 @@ repository = "https://github.com/meh/rust-tun"
 keywords = ["tun", "network", "tunnel", "bindings"]
 
 [dependencies]
+anyhow = "1.0.75"
 byteorder = { version = "1", optional = true }
 bytes = { version = "1", optional = true }
 futures-core = { version = "0.3", optional = true }

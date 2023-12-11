@@ -39,10 +39,79 @@ use crate::{
 pub struct Device {
     name: String,
     queues: Vec<Queue>,
-    ctl: Fd,
+    ctl: Option<Fd>,
 }
 
 impl Device {
+    pub fn from_raw_fd(fd: RawFd, config: &Configuration) -> Result<Self> {
+        let mut device = unsafe {
+            let dev = match config.name.as_ref() {
+                Some(name) => {
+                    let name = CString::new(name.clone())?;
+
+                    if name.as_bytes_with_nul().len() > IFNAMSIZ {
+                        return Err(Error::NameTooLong).map_err(anyhow::Error::from);
+                    }
+
+                    Some(name)
+                }
+
+                None => None,
+            };
+
+            let mut queues = Vec::new();
+
+            let mut req: ifreq = mem::zeroed();
+
+            if let Some(dev) = dev.as_ref() {
+                ptr::copy_nonoverlapping(
+                    dev.as_ptr() as *const c_char,
+                    req.ifr_name.as_mut_ptr(),
+                    dev.as_bytes().len(),
+                );
+            }
+
+            let device_type: c_short = config.layer.unwrap_or(Layer::L3).into();
+
+            let queues_num = 1;
+            if queues_num < 1 {
+                return Err(Error::InvalidQueuesNumber.into());
+            }
+
+            let iff_no_pi = IFF_NO_PI as c_short;
+            let iff_multi_queue = IFF_MULTI_QUEUE as c_short;
+            let packet_information = config.platform.packet_information;
+            req.ifr_ifru.ifru_flags = device_type
+                | if packet_information { 0 } else { iff_no_pi }
+                | if queues_num > 1 { iff_multi_queue } else { 0 };
+
+            for _ in 0..queues_num {
+                let tun = Fd(fd);
+
+                if tunsetiff(tun.0, &mut req as *mut _ as *mut _) < 0 {
+                    return Err(io::Error::last_os_error().into());
+                }
+
+                queues.push(Queue {
+                    tun,
+                    pi_enabled: config.platform.packet_information,
+                });
+            }
+
+            let ctl = None;
+
+            let name = CStr::from_ptr(req.ifr_name.as_ptr())
+                .to_string_lossy()
+                .to_string();
+            Device { name, queues, ctl }
+        };
+
+        if config.platform.apply_settings {
+            device.configure(config)?;
+        }
+
+        Ok(device)
+    }
     /// Create a new `Device` for the given `Configuration`.
     pub fn new(config: &Configuration) -> Result<Self> {
         let mut device = unsafe {
@@ -51,7 +120,7 @@ impl Device {
                     let name = CString::new(name.clone())?;
 
                     if name.as_bytes_with_nul().len() > IFNAMSIZ {
-                        return Err(Error::NameTooLong);
+                        return Err(Error::NameTooLong.into());
                     }
 
                     Some(name)
@@ -76,7 +145,7 @@ impl Device {
 
             let queues_num = config.queues.unwrap_or(1);
             if queues_num < 1 {
-                return Err(Error::InvalidQueuesNumber);
+                return Err(Error::InvalidQueuesNumber.into());
             }
 
             let iff_no_pi = IFF_NO_PI as c_short;
@@ -100,7 +169,7 @@ impl Device {
                 });
             }
 
-            let ctl = Fd::new(libc::socket(AF_INET, SOCK_DGRAM, 0))?;
+            let ctl = Some(Fd::new(libc::socket(AF_INET, SOCK_DGRAM, 0))?);
 
             let name = CStr::from_ptr(req.ifr_name.as_ptr())
                 .to_string_lossy()
@@ -213,7 +282,7 @@ impl D for Device {
             let name = CString::new(value)?;
 
             if name.as_bytes_with_nul().len() > IFNAMSIZ {
-                return Err(Error::NameTooLong);
+                return Err(Error::NameTooLong.into());
             }
 
             let mut req = self.request();
@@ -223,7 +292,7 @@ impl D for Device {
                 value.len(),
             );
 
-            if siocsifname(self.ctl.as_raw_fd(), &req) < 0 {
+            if siocsifname(self.ctl.as_ref().unwrap().as_raw_fd(), &req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 
@@ -237,7 +306,7 @@ impl D for Device {
         unsafe {
             let mut req = self.request();
 
-            if siocgifflags(self.ctl.as_raw_fd(), &mut req) < 0 {
+            if siocgifflags(self.ctl.as_ref().unwrap().as_raw_fd(), &mut req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 
@@ -247,7 +316,7 @@ impl D for Device {
                 req.ifr_ifru.ifru_flags &= !(IFF_UP as c_short);
             }
 
-            if siocsifflags(self.ctl.as_raw_fd(), &req) < 0 {
+            if siocsifflags(self.ctl.as_ref().unwrap().as_raw_fd(), &req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 
@@ -259,7 +328,7 @@ impl D for Device {
         unsafe {
             let mut req = self.request();
 
-            if siocgifaddr(self.ctl.as_raw_fd(), &mut req) < 0 {
+            if siocgifaddr(self.ctl.as_ref().unwrap().as_raw_fd(), &mut req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 
@@ -272,7 +341,7 @@ impl D for Device {
             let mut req = self.request();
             req.ifr_ifru.ifru_addr = SockAddr::from(value).into();
 
-            if siocsifaddr(self.ctl.as_raw_fd(), &req) < 0 {
+            if siocsifaddr(self.ctl.as_ref().unwrap().as_raw_fd(), &req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 
@@ -284,7 +353,7 @@ impl D for Device {
         unsafe {
             let mut req = self.request();
 
-            if siocgifdstaddr(self.ctl.as_raw_fd(), &mut req) < 0 {
+            if siocgifdstaddr(self.ctl.as_ref().unwrap().as_raw_fd(), &mut req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 
@@ -297,7 +366,7 @@ impl D for Device {
             let mut req = self.request();
             req.ifr_ifru.ifru_dstaddr = SockAddr::from(value).into();
 
-            if siocsifdstaddr(self.ctl.as_raw_fd(), &req) < 0 {
+            if siocsifdstaddr(self.ctl.as_ref().unwrap().as_raw_fd(), &req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 
@@ -309,7 +378,7 @@ impl D for Device {
         unsafe {
             let mut req = self.request();
 
-            if siocgifbrdaddr(self.ctl.as_raw_fd(), &mut req) < 0 {
+            if siocgifbrdaddr(self.ctl.as_ref().unwrap().as_raw_fd(), &mut req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 
@@ -322,7 +391,7 @@ impl D for Device {
             let mut req = self.request();
             req.ifr_ifru.ifru_broadaddr = SockAddr::from(value).into();
 
-            if siocsifbrdaddr(self.ctl.as_raw_fd(), &req) < 0 {
+            if siocsifbrdaddr(self.ctl.as_ref().unwrap().as_raw_fd(), &req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 
@@ -334,7 +403,7 @@ impl D for Device {
         unsafe {
             let mut req = self.request();
 
-            if siocgifnetmask(self.ctl.as_raw_fd(), &mut req) < 0 {
+            if siocgifnetmask(self.ctl.as_ref().unwrap().as_raw_fd(), &mut req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 
@@ -347,7 +416,7 @@ impl D for Device {
             let mut req = self.request();
             req.ifr_ifru.ifru_netmask = SockAddr::from(value).into();
 
-            if siocsifnetmask(self.ctl.as_raw_fd(), &req) < 0 {
+            if siocsifnetmask(self.ctl.as_ref().unwrap().as_raw_fd(), &req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 
@@ -359,7 +428,7 @@ impl D for Device {
         unsafe {
             let mut req = self.request();
 
-            if siocgifmtu(self.ctl.as_raw_fd(), &mut req) < 0 {
+            if siocgifmtu(self.ctl.as_ref().unwrap().as_raw_fd(), &mut req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 
@@ -372,7 +441,7 @@ impl D for Device {
             let mut req = self.request();
             req.ifr_ifru.ifru_mtu = value;
 
-            if siocsifmtu(self.ctl.as_raw_fd(), &req) < 0 {
+            if siocsifmtu(self.ctl.as_ref().unwrap().as_raw_fd(), &req) < 0 {
                 return Err(io::Error::last_os_error().into());
             }
 

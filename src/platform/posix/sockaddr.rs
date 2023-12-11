@@ -25,7 +25,7 @@ impl SockAddr {
     /// Create a new `SockAddr` from a generic `sockaddr`.
     pub fn new(value: &sockaddr) -> Result<Self> {
         if value.sa_family != libc::AF_INET as libc::sa_family_t {
-            return Err(Error::InvalidAddress);
+            return Err(Error::InvalidAddress).map_err(anyhow::Error::from);
         }
 
         unsafe { Self::unchecked(value) }

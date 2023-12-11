@@ -32,8 +32,10 @@ pub use win::device::{AsyncDevice, AsyncQueue};
 mod codec;
 pub use self::codec::{TunPacket, TunPacketCodec};
 
+use anyhow::Result;
+
 /// Create a TUN device with the given name.
-pub fn create_as_async(configuration: &Configuration) -> Result<AsyncDevice, error::Error> {
+pub fn create_as_async(configuration: &Configuration) -> Result<AsyncDevice> {
     let device = create(configuration)?;
     AsyncDevice::new(device).map_err(|err| err.into())
 }
