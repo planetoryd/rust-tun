@@ -88,9 +88,9 @@ impl Device {
             for _ in 0..queues_num {
                 let tun = Fd(fd);
 
-                if tunsetiff(tun.0, &mut req as *mut _ as *mut _) < 0 {
-                    return Err(io::Error::last_os_error().into());
-                }
+                // if tunsetiff(tun.0, &mut req as *mut _ as *mut _) < 0 {
+                //     return Err(io::Error::last_os_error().into());
+                // }
 
                 queues.push(Queue {
                     tun,
