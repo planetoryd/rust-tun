@@ -21,7 +21,13 @@ use std::{
     io::{self, Read, Write},
     mem,
     net::Ipv4Addr,
-    os::unix::io::{AsRawFd, IntoRawFd, RawFd},
+    os::{
+        fd::AsFd,
+        unix::{
+            io::{AsRawFd, IntoRawFd, RawFd},
+            prelude::BorrowedFd,
+        },
+    },
     ptr,
     sync::Arc,
     vec::Vec,
@@ -460,6 +466,12 @@ impl AsRawFd for Device {
     }
 }
 
+impl AsFd for Device {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.queues[0].as_fd()
+    }
+}
+
 impl IntoRawFd for Device {
     fn into_raw_fd(mut self) -> RawFd {
         // It is Ok to swap the first queue with the last one, because the self will be dropped afterwards
@@ -510,6 +522,12 @@ impl Write for Queue {
 impl AsRawFd for Queue {
     fn as_raw_fd(&self) -> RawFd {
         self.tun.as_raw_fd()
+    }
+}
+
+impl AsFd for Queue {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(self.as_raw_fd()) }
     }
 }
 
