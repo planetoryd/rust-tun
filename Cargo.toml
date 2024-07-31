@@ -14,6 +14,7 @@ keywords = ["tun", "network", "tunnel", "bindings"]
 anyhow = "1.0.75"
 byteorder = { version = "1", optional = true }
 bytes = { version = "1", optional = true }
+clap = { version = "4.5.11", features = ["derive"] }
 futures-core = { version = "0.3", optional = true }
 libc = "0.2"
 log = "0.4"

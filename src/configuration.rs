@@ -18,13 +18,13 @@ use std::os::unix::io::RawFd;
 #[cfg(windows)]
 use std::os::windows::raw::HANDLE;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::address::IntoAddress;
 use crate::platform;
 
 /// TUN interface OSI layer of operation.
-#[derive(Clone, Copy, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Default, Debug, Eq, PartialEq, Serialize, Deserialize, clap::ValueEnum)]
 pub enum Layer {
     L2,
     #[default]
