@@ -1,5 +1,5 @@
 [package]
-name = "tun"
+name = "nsproxy-tun"
 version = "0.6.1"
 edition = "2021"
 
